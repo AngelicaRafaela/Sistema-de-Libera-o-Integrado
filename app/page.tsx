@@ -5,6 +5,7 @@ import type { PedidoExtraido } from "@/lib/extrair";
 import { montarEmailFinal } from "@/lib/email";
 
 type StatusItem = "pendente" | "processando" | "concluido" | "erro";
+type TipoErro = "limite" | "erro";
 
 interface ItemImagem {
   id: string;
@@ -13,6 +14,7 @@ interface ItemImagem {
   status: StatusItem;
   resultado?: PedidoExtraido;
   erro?: string;
+  tipoErro?: TipoErro;
 }
 
 const CONCORRENCIA = 3;
@@ -21,8 +23,9 @@ function novoId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-async function processarUmaImagem(arquivo: File): Promise<
-  { ok: true; extraido: PedidoExtraido } | { ok: false; erro: string }
+async function processarUmaImagem(arquivo: File): Promise
+  | { ok: true; extraido: PedidoExtraido }
+  | { ok: false; erro: string; tipoErro: TipoErro }
 > {
   const formData = new FormData();
   formData.append("imagem", arquivo);
@@ -35,7 +38,11 @@ async function processarUmaImagem(arquivo: File): Promise<
   const dados = await resp.json();
 
   if (!resp.ok || !dados.ok) {
-    return { ok: false, erro: dados.erro ?? "Falha desconhecida." };
+    return {
+      ok: false,
+      erro: dados.erro ?? "Falha desconhecida.",
+      tipoErro: dados.tipo === "limite" ? "limite" : "erro",
+    };
   }
 
   return { ok: true, extraido: dados.extraido as PedidoExtraido };
@@ -84,9 +91,9 @@ export default function Home() {
           atual.map((i) => {
             if (i.id !== item.id) return i;
             if (resultado.ok) {
-              return { ...i, status: "concluido", resultado: resultado.extraido, erro: undefined };
+              return { ...i, status: "concluido", resultado: resultado.extraido, erro: undefined, tipoErro: undefined };
             }
-            return { ...i, status: "erro", erro: resultado.erro };
+            return { ...i, status: "erro", erro: resultado.erro, tipoErro: resultado.tipoErro };
           })
         );
       }
@@ -100,6 +107,8 @@ export default function Home() {
   };
 
   const concluidos = itens.filter((i) => i.status === "concluido" && i.resultado);
+const comErro = itens.filter((i) => i.status === "erro");
+  const erroDeLimite = comErro.find((i) => i.tipoErro === "limite");
   const emailFinal =
     concluidos.length > 0
       ? montarEmailFinal(concluidos.map((i) => i.resultado!.blocoTexto))
@@ -175,6 +184,13 @@ export default function Home() {
         </section>
 
         {/* Chips dos arquivos pendentes */}
+{erroDeLimite && (
+          <div className="mt-6 rounded-sm border-2 border-reject bg-reject/10 px-4 py-3">
+            <p className="font-mono text-sm font-medium text-reject">
+              ⚠ {erroDeLimite.erro}
+            </p>
+          </div>
+        )}
         {itens.length > 0 && (
           <div className="mt-6 flex flex-wrap gap-2">
             {itens.map((item) => (
@@ -231,6 +247,18 @@ export default function Home() {
               </div>
             )}
           </div>
+{/* Lista de falhas (não relacionadas a limite, já mostrado no aviso acima) */}
+        {comErro.filter((i) => i.tipoErro !== "limite").length > 0 && (
+          <ul className="mt-3 space-y-1">
+            {comErro
+              .filter((i) => i.tipoErro !== "limite")
+              .map((item) => (
+                <li key={item.id} className="font-mono text-xs text-reject">
+                  {item.arquivo.name}: {item.erro}
+                </li>
+              ))}
+          </ul>
+        )}
         )}
 
         {/* Tickets de resultado */}

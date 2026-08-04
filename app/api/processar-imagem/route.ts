@@ -8,6 +8,21 @@ export const maxDuration = 60;
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const NOME_MODELO = "gemini-flash-latest";
 
+function ehErroDeLimite(erro: unknown): boolean {
+  if (!erro || typeof erro !== "object") return false;
+  const status =
+    "status" in erro ? (erro as { status?: unknown }).status : undefined;
+  const code =
+    "code" in erro ? (erro as { code?: unknown }).code : undefined;
+  const mensagem =
+    "message" in erro ? String((erro as { message?: unknown }).message) : "";
+  return (
+    status === 429 ||
+    code === 429 ||
+    /RESOURCE_EXHAUSTED|rate limit|quota/i.test(mensagem)
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -40,11 +55,29 @@ export async function POST(req: NextRequest) {
     const extraido = interpretarRespostaIA(textoIA);
 
     return NextResponse.json({ ok: true, extraido });
-  } catch (erro) {
+ } catch (erro) {
     console.error("Erro ao processar imagem:", erro);
+
+    if (ehErroDeLimite(erro)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          tipo: "limite",
+          erro:
+            "Limite de uso da API do Gemini atingido no momento. Aguarde alguns instantes e clique em \"Processar imagens\" novamente.",
+        },
+        { status: 429 }
+      );
+    }
+
     return NextResponse.json(
-      { ok: false, erro: "Falha ao processar esta imagem. Tente novamente." },
+      {
+        ok: false,
+        tipo: "erro",
+        erro: "Falha ao processar esta imagem. Tente novamente.",
+      },
       { status: 500 }
     );
   }
+}
 }
