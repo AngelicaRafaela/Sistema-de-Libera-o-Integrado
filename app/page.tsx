@@ -3,7 +3,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { PedidoExtraido } from "@/lib/extrair";
 import { montarEmailFinal } from "@/lib/email";
-import { gerarPdfPedidos } from "@/lib/pdf";
 
 type StatusItem = "pendente" | "processando" | "concluido" | "erro";
 
@@ -237,19 +236,9 @@ export default function Home() {
         {/* Tickets de resultado */}
         {concluidos.length > 0 && (
           <section className="mt-10 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink-soft">
-                Pedidos liberados ({concluidos.length})
-              </h2>
-              <button
-                onClick={() =>
-                  gerarPdfPedidos(concluidos.map((i) => i.resultado!))
-                }
-                className="rounded-sm border border-ink px-3 py-1.5 font-mono text-xs text-ink hover:bg-ink hover:text-kraft"
-              >
-                Baixar PDF
-              </button>
-            </div>
+            <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink-soft">
+              Pedidos liberados ({concluidos.length})
+            </h2>
             {concluidos.map((item) => (
               <TicketPedido key={item.id} extraido={item.resultado!} />
             ))}
