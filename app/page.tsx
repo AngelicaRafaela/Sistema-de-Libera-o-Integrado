@@ -23,7 +23,7 @@ function novoId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-async function processarUmaImagem(arquivo: File): Promise
+async function processarUmaImagem(arquivo: File): Promise<
   | { ok: true; extraido: PedidoExtraido }
   | { ok: false; erro: string; tipoErro: TipoErro }
 > {
@@ -247,7 +247,9 @@ const comErro = itens.filter((i) => i.status === "erro");
               </div>
             )}
           </div>
-{/* Lista de falhas (não relacionadas a limite, já mostrado no aviso acima) */}
+        )}
+
+        {/* Lista de falhas (não relacionadas a limite, já mostrado no aviso acima) */}
         {comErro.filter((i) => i.tipoErro !== "limite").length > 0 && (
           <ul className="mt-3 space-y-1">
             {comErro
@@ -258,7 +260,6 @@ const comErro = itens.filter((i) => i.status === "erro");
                 </li>
               ))}
           </ul>
-        )}
         )}
 
         {/* Tickets de resultado */}
