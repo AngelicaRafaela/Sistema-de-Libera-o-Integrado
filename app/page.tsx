@@ -15,9 +15,27 @@ interface ItemImagem {
   resultado?: PedidoExtraido;
   erro?: string;
   tipoErro?: TipoErro;
+  mensagemProcessamento?: string;
 }
 
-const CONCORRENCIA = 3;
+// Concorrência 1: processa uma imagem por vez, em vez de disparar várias em
+// paralelo. Isso evita estourar o limite de requisições por minuto (RPM) da
+// camada gratuita do Gemini, que gira em torno de 10-15 RPM.
+const CONCORRENCIA = 1;
+
+// Intervalo mínimo entre o início de cada requisição (em ms). Com 4,5s de
+// espaçamento, mesmo processando dezenas de imagens seguidas você fica bem
+// abaixo do teto de RPM.
+const INTERVALO_ENTRE_REQUISICOES_MS = 4500;
+
+// Quantas vezes tentar de novo automaticamente quando cai em erro de limite
+// (429), e quanto esperar antes de cada nova tentativa (cresce a cada vez).
+const MAX_TENTATIVAS_LIMITE = 3;
+const ESPERA_BASE_RETRY_MS = 20000; // 20s, 40s, 60s...
+
+function aguardar(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function novoId() {
   return Math.random().toString(36).slice(2, 10);
@@ -46,6 +64,26 @@ async function processarUmaImagem(arquivo: File): Promise<
   }
 
   return { ok: true, extraido: dados.extraido as PedidoExtraido };
+}
+
+// Tenta processar a imagem, e se cair em erro de limite (429), espera e
+// tenta de novo sozinho (até MAX_TENTATIVAS_LIMITE vezes) antes de desistir.
+async function processarComRetry(
+  arquivo: File,
+  aoTentarNovamente?: (tentativa: number, esperaMs: number) => void
+) {
+  let ultimoResultado = await processarUmaImagem(arquivo);
+
+  let tentativa = 1;
+  while (!ultimoResultado.ok && ultimoResultado.tipoErro === "limite" && tentativa <= MAX_TENTATIVAS_LIMITE) {
+    const esperaMs = ESPERA_BASE_RETRY_MS * tentativa;
+    aoTentarNovamente?.(tentativa, esperaMs);
+    await aguardar(esperaMs);
+    ultimoResultado = await processarUmaImagem(arquivo);
+    tentativa += 1;
+  }
+
+  return ultimoResultado;
 }
 
 export default function Home() {
@@ -82,20 +120,37 @@ export default function Home() {
         cursor += 1;
 
         setItens((atual) =>
-          atual.map((i) => (i.id === item.id ? { ...i, status: "processando" } : i))
+          atual.map((i) => (i.id === item.id ? { ...i, status: "processando", mensagemProcessamento: undefined } : i))
         );
 
-        const resultado = await processarUmaImagem(item.arquivo);
+        const resultado = await processarComRetry(item.arquivo, (tentativa, esperaMs) => {
+          setItens((atual) =>
+            atual.map((i) =>
+              i.id === item.id
+                ? {
+                    ...i,
+                    mensagemProcessamento: `Limite da API atingido — tentando de novo em ${Math.round(esperaMs / 1000)}s (tentativa ${tentativa}/${MAX_TENTATIVAS_LIMITE})...`,
+                  }
+                : i
+            )
+          );
+        });
 
         setItens((atual) =>
           atual.map((i) => {
             if (i.id !== item.id) return i;
             if (resultado.ok) {
-              return { ...i, status: "concluido", resultado: resultado.extraido, erro: undefined, tipoErro: undefined };
+              return { ...i, status: "concluido", resultado: resultado.extraido, erro: undefined, tipoErro: undefined, mensagemProcessamento: undefined };
             }
-            return { ...i, status: "erro", erro: resultado.erro, tipoErro: resultado.tipoErro };
+            return { ...i, status: "erro", erro: resultado.erro, tipoErro: resultado.tipoErro, mensagemProcessamento: undefined };
           })
         );
+
+        // Espera antes de disparar a próxima requisição, para não estourar
+        // o limite de requisições por minuto (RPM) da API.
+        if (cursor < fila.length) {
+          await aguardar(INTERVALO_ENTRE_REQUISICOES_MS);
+        }
       }
     }
 
@@ -196,28 +251,35 @@ const comErro = itens.filter((i) => i.status === "erro");
             {itens.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center gap-2 rounded-sm border border-ledger bg-white/50 py-1 pl-1 pr-2 text-xs"
+                className="flex flex-col gap-0.5 rounded-sm border border-ledger bg-white/50 py-1 pl-1 pr-2 text-xs"
               >
-                <img
-                  src={item.preview}
-                  alt=""
-                  className="h-8 w-8 rounded-sm object-cover"
-                />
-                <span className="max-w-[10rem] truncate font-mono text-ink-soft">
-                  {item.arquivo.name}
-                </span>
-                <StatusBadge status={item.status} />
-                {item.status !== "processando" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removerItem(item.id);
-                    }}
-                    className="text-ink-soft hover:text-reject"
-                    aria-label={`Remover ${item.arquivo.name}`}
-                  >
-                    ×
-                  </button>
+                <div className="flex items-center gap-2">
+                  <img
+                    src={item.preview}
+                    alt=""
+                    className="h-8 w-8 rounded-sm object-cover"
+                  />
+                  <span className="max-w-[10rem] truncate font-mono text-ink-soft">
+                    {item.arquivo.name}
+                  </span>
+                  <StatusBadge status={item.status} />
+                  {item.status !== "processando" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removerItem(item.id);
+                      }}
+                      className="text-ink-soft hover:text-reject"
+                      aria-label={`Remover ${item.arquivo.name}`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {item.mensagemProcessamento && (
+                  <span className="font-mono text-[10px] text-amber-dark">
+                    {item.mensagemProcessamento}
+                  </span>
                 )}
               </div>
             ))}
