@@ -200,7 +200,7 @@ const comErro = itens.filter((i) => i.status === "erro");
           </h1>
           <p className="mt-2 max-w-xl text-sm text-ink-soft">
             Envie os prints da crítica de pedido. Cada um vira uma etiqueta de
-            liberação, cruzada com o catálogo de produtos — e ao final você leva
+            liberação, cruzada com o catálogo de produtos e ao final você leva
             o e-mail pronto.
           </p>
         </header>
