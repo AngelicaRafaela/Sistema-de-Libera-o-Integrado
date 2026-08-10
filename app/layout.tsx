@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 
 const fontMono = JetBrains_Mono({
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className={`${fontMono.variable} ${fontSans.variable} font-sans bg-kraft text-ink`}>
         {children}
+ 	<Analytics />
       </body>
     </html>
   );
