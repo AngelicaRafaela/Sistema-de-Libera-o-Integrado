@@ -188,6 +188,22 @@ const comErro = itens.filter((i) => i.status === "erro");
     URL.revokeObjectURL(url);
   };
 
+  // Abre o cliente de e-mail padrão do computador (Outlook, na maioria dos
+  // casos corporativos) com o e-mail já preenchido, pronto para o
+  // destinatário e o envio. O navegador só sabe delegar para o app padrão
+  // do sistema — não há como "forçar" o Outlook especificamente se a
+  // pessoa tiver outro programa configurado como padrão.
+  //
+  // Link mailto: tem um limite de tamanho (varia por navegador/SO, mas
+  // gira em torno de ~1800-2000 caracteres). Com poucos pedidos concluídos
+  // costuma funcionar bem; com uma leva grande de pedidos, o corpo pode
+  // ser cortado — nesse caso, use "Copiar" e cole direto no Outlook.
+  const enviarPorEmail = () => {
+    const assunto = "Liberação de Crítica - Pedido(s)";
+    const link = `mailto:?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(emailFinal)}`;
+    window.location.href = link;
+  };
+
   return (
     <main className="min-h-screen px-4 py-12 sm:py-16">
       <div className="mx-auto max-w-3xl">
@@ -352,9 +368,15 @@ const comErro = itens.filter((i) => i.status === "erro");
                 </button>
                 <button
                   onClick={baixarEmail}
-                  className="rounded-sm bg-ink px-3 py-1.5 font-mono text-xs text-kraft hover:bg-ink-soft"
+                  className="rounded-sm border border-ink px-3 py-1.5 font-mono text-xs text-ink hover:bg-ink hover:text-kraft"
                 >
                   Baixar .txt
+                </button>
+                <button
+                  onClick={enviarPorEmail}
+                  className="rounded-sm bg-ink px-3 py-1.5 font-mono text-xs text-kraft hover:bg-ink-soft"
+                >
+                  Enviar por e-mail
                 </button>
               </div>
             </div>
