@@ -5,7 +5,9 @@ import { PROMPT_EXTRACAO, interpretarRespostaIA } from "@/lib/extrair";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const CHAVES_API = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2].filter(
+  (chave): chave is string => Boolean(chave)
+);
 const NOME_MODELO = "gemini-flash-latest";
 
 function ehErroDeLimite(erro: unknown): boolean {
@@ -35,27 +37,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (CHAVES_API.length === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          tipo: "erro",
+          erro: "Nenhuma chave da API do Gemini configurada.",
+        },
+        { status: 500 }
+      );
+    }
+
     const bytes = Buffer.from(await arquivo.arrayBuffer());
     const base64 = bytes.toString("base64");
 
-    const resposta = await client.models.generateContent({
-      model: NOME_MODELO,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: PROMPT_EXTRACAO },
-            { inlineData: { mimeType: arquivo.type || "image/jpeg", data: base64 } },
+    let ultimoErro: unknown = null;
+
+    for (let i = 0; i < CHAVES_API.length; i++) {
+      const client = new GoogleGenAI({ apiKey: CHAVES_API[i] });
+
+      try {
+        const resposta = await client.models.generateContent({
+          model: NOME_MODELO,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: PROMPT_EXTRACAO },
+                { inlineData: { mimeType: arquivo.type || "image/jpeg", data: base64 } },
+              ],
+            },
           ],
-        },
-      ],
-    });
+        });
 
-    const textoIA = resposta.text ?? "";
-    const extraido = interpretarRespostaIA(textoIA);
+        const textoIA = resposta.text ?? "";
+        const extraido = interpretarRespostaIA(textoIA);
 
-    return NextResponse.json({ ok: true, extraido });
- } catch (erro) {
+        return NextResponse.json({ ok: true, extraido });
+      } catch (erro) {
+        ultimoErro = erro;
+
+        // Se atingiu limite e ainda há outra chave disponível, tenta a próxima
+        if (ehErroDeLimite(erro) && i < CHAVES_API.length - 1) {
+          console.warn(`Chave ${i + 1} atingiu limite, tentando próxima chave.`);
+          continue;
+        }
+
+        throw erro;
+      }
+    }
+
+    throw ultimoErro;
+  } catch (erro) {
     console.error("Erro ao processar imagem:", erro);
 
     if (ehErroDeLimite(erro)) {
