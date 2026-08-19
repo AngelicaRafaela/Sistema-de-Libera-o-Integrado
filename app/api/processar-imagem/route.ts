@@ -25,6 +25,25 @@ function ehErroDeLimite(erro: unknown): boolean {
   );
 }
 
+// Erros que valem tentar a próxima chave: limite/quota (429) OU modelo
+// sobrecarregado do lado do Google (503/UNAVAILABLE), que é o mais comum na prática.
+function ehErroParaTentarProximaChave(erro: unknown): boolean {
+  if (!erro || typeof erro !== "object") return false;
+  const status =
+    "status" in erro ? (erro as { status?: unknown }).status : undefined;
+  const code =
+    "code" in erro ? (erro as { code?: unknown }).code : undefined;
+  const mensagem =
+    "message" in erro ? String((erro as { message?: unknown }).message) : "";
+  return (
+    ehErroDeLimite(erro) ||
+    status === 503 ||
+    code === 503 ||
+    status === "UNAVAILABLE" ||
+    /UNAVAILABLE|overloaded|high demand/i.test(mensagem)
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -77,9 +96,10 @@ export async function POST(req: NextRequest) {
       } catch (erro) {
         ultimoErro = erro;
 
-        // Se atingiu limite e ainda há outra chave disponível, tenta a próxima
-        if (ehErroDeLimite(erro) && i < CHAVES_API.length - 1) {
-          console.warn(`Chave ${i + 1} atingiu limite, tentando próxima chave.`);
+        // Se deu erro de limite/quota ou o modelo está sobrecarregado (503),
+        // e ainda há outra chave disponível, tenta a próxima.
+        if (ehErroParaTentarProximaChave(erro) && i < CHAVES_API.length - 1) {
+          console.warn(`Chave ${i + 1} falhou (limite ou sobrecarga), tentando próxima chave.`);
           continue;
         }
 
@@ -100,6 +120,18 @@ export async function POST(req: NextRequest) {
             "Limite de uso da API do Gemini atingido no momento. Aguarde alguns instantes e clique em \"Processar imagens\" novamente.",
         },
         { status: 429 }
+      );
+    }
+
+    if (ehErroParaTentarProximaChave(erro)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          tipo: "limite",
+          erro:
+            "O modelo do Gemini está sobrecarregado no momento (todas as chaves configuradas falharam). Aguarde alguns instantes e clique em \"Processar imagens\" novamente.",
+        },
+        { status: 503 }
       );
     }
 
